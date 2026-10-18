@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>旅行費メモ</title>
+
+  <!-- 見た目（CSS）。ここを変えても動きには影響しない -->
+  <style>
+    body { font-family: sans-serif; max-width: 480px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 22px; }
+    label { display: block; margin-top: 12px; font-size: 14px; color: #555; }
+    input { width: 100%; font-size: 22px; padding: 8px; box-sizing: border-box; }
+    #add { width: 100%; margin-top: 16px; font-size: 20px; padding: 12px; }
+    #total { margin-top: 20px; font-size: 26px; font-weight: bold; }
+    #rateInfo { font-size: 13px; color: #777; }
+    ul { padding: 0; list-style: none; }
+    li { padding: 10px 0; border-bottom: 1px solid #ddd; font-size: 16px; }
+    .del { float: right; }
+    pre { font-size: 12px; background: #f4f4f4; padding: 8px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+
+  <h1>旅行費メモ</h1>
+
+  <!-- ① 入力欄 -->
+  <label>品目</label>
+  <input id="item" type="text" placeholder="例：パエリア">
+
+  <label>金額（ユーロ）</label>
+  <input id="euro" type="number" inputmode="decimal" placeholder="例：24">
+
+  <button id="add">記録する</button>
+
+  <!-- ② 合計とレート -->
+  <div id="total">合計 €0 ／ ¥0</div>
+  <div id="rateInfo">レート取得中…</div>
+
+  <!-- ③ 記録の一覧 -->
+  <ul id="list"></ul>
+
+  <!-- ④ 学習用：iPhoneの中に実際に保存されているデータの姿 -->
+  <details>
+    <summary>保存されているデータを見る</summary>
+    <pre id="raw"></pre>
+  </details>
+
+  <script>
+    // ===== 準備 =====
+    const KEY = "travel-memo";  // 保存場所につける名札
+    let rate = 165;             // レートが取れなかったときの予備
+    let records = load();       // 起動したら、まず保存データを読み込む
+
+    // ===== データの読み書き（段階2の主役）=====
+    // 1件の記録は { date: 日付, item: 品目, euro: 金額 } という形で持つ
+    function load() {
+      try {
+        const text = localStorage.getItem(KEY);   // iPhoneの中から取り出す
+        return text ? JSON.parse(text) : [];      // 文字を記録の並びに戻す
+      } catch (e) {
+        return [];                                // 読めなければ空から始める
+      }
+    }
+
+    function save() {
+      try {
+        localStorage.setItem(KEY, JSON.stringify(records)); // 記録の並びを文字にしてしまう
+      } catch (e) {
+        alert("保存できませんでした");
+      }
+    }
+
+    // ===== 記録を1件足す =====
+    function addRecord() {
+      const item = document.getElementById("item").value.trim();
+      const euro = Number(document.getElementById("euro").value);
+
+      // 入口でゴミを止める：品目が空、金額が0以下なら記録しない
+      if (!item || !(euro > 0)) {
+        alert("品目と金額を入れてください");
+        return;
+      }
+
+      records.push({
+        date: new Date().toLocaleDateString("ja-JP"),  // 今日の日付は自動で入る
+        item: item,
+        euro: euro
+      });
+      save();
+      show();
+
+      document.getElementById("item").value = "";
+      document.getElementById("euro").value = "";
+    }
+
+    // ===== 記録を1件消す（打ち間違い用）=====
+    function removeRecord(i) {
+      if (!confirm("「" + records[i].item + "」を消しますか？")) return;
+      records.splice(i, 1);
+      save();
+      show();
+    }
+
+    // ===== 画面に表示する =====
+    function show() {
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+      let sum = 0;
+
+      records.forEach(function (r, i) {
+        sum += r.euro;
+        const li = document.createElement("li");
+        li.textContent = r.date + "　" + r.item + "　€" + r.euro +
+                         "（¥" + Math.round(r.euro * rate).toLocaleString() + "）";
+
+        const btn = document.createElement("button");
+        btn.textContent = "×";
+        btn.className = "del";
+        btn.onclick = function () { removeRecord(i); };
+        li.appendChild(btn);
+
+        list.appendChild(li);
+      });
+
+      document.getElementById("total").textContent =
+        "合計 €" + Math.round(sum * 100) / 100 +
+        " ／ ¥" + Math.round(sum * rate).toLocaleString();
+
+      // 学習用：保存データをそのまま見せる
+      document.getElementById("raw").textContent = JSON.stringify(records, null, 2);
+    }
+
+    document.getElementById("add").addEventListener("click", addRecord);
+
+    // ===== レートを取りにいく（段階1.5の流用）=====
+    fetch("https://api.frankfurter.dev/v1/latest?base=EUR&symbols=JPY")
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        rate = data.rates.JPY;
+        document.getElementById("rateInfo").textContent =
+          "レート €1＝¥" + rate + "（" + data.date + " 時点）";
+        show();
+      })
+      .catch(function () {
+        document.getElementById("rateInfo").textContent =
+          "レートを取得できませんでした（仮に €1＝¥" + rate + " で計算）";
+      });
+
+    show();
+  </script>
+
+</body>
+</html>
